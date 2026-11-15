@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student Athlete AI Planner</title>
+<style>
+:root { --navy:#14213d; --blue:#3157a4; --gold:#f5b700; --bg:#f4f6fa; --card:#fff; --ink:#202938; --muted:#657084; --red:#b42318; --green:#18794e; }
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{background:var(--navy);color:white;padding:24px max(18px,calc((100% - 1100px)/2));border-bottom:5px solid var(--gold)}
+header h1{margin:0;font-size:clamp(1.5rem,4vw,2.2rem)} header p{margin:6px 0 0;color:#e2e8f0}
+main{max-width:1100px;margin:22px auto;padding:0 16px;display:grid;grid-template-columns:minmax(280px,350px) 1fr;gap:18px}
+.card{background:var(--card);border:1px solid #e1e6ef;border-radius:14px;padding:18px;box-shadow:0 3px 12px #15213d0a}
+h2{font-size:1.15rem;margin:0 0 14px} label{display:block;font-weight:650;font-size:.9rem;margin:11px 0 5px}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd3df;border-radius:8px;background:white;color:var(--ink);font:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{border:0;border-radius:9px;padding:11px 14px;background:var(--blue);color:white;font-weight:700;cursor:pointer;margin-top:14px}
+button.secondary{background:#e8edf7;color:var(--navy)} button.danger{background:#fbe9e7;color:var(--red);padding:6px 9px;margin:0}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.metric{background:#f0f4fb;padding:12px;border-radius:10px}.metric b{display:block;font-size:1.45rem;color:var(--navy)}.metric span{font-size:.8rem;color:var(--muted)}
+.notice{padding:12px;border-radius:9px;background:#fff4d6;color:#6b4c00;margin:10px 0}
+.notice.good{background:#e6f5ed;color:var(--green)} .notice.bad{background:#fdebea;color:var(--red)}
+.event{display:flex;justify-content:space-between;gap:12px;border:1px solid #e4e8ef;border-left:5px solid var(--blue);padding:12px;border-radius:9px;margin:9px 0}
+.event.school{border-left-color:#3157a4}.event.sport{border-left-color:#18794e}.event.personal{border-left-color:#9b51e0}
+.event h3{margin:0;font-size:1rem}.event p{margin:4px 0 0;color:var(--muted);font-size:.88rem}
+.tag{display:inline-block;border-radius:99px;padding:2px 8px;font-size:.75rem;font-weight:700;background:#edf1f8;margin-right:5px}
+.tag.high{background:#fdebea;color:var(--red)}.tag.medium{background:#fff4d6;color:#805b00}.tag.low{background:#e6f5ed;color:var(--green)}
+.empty{color:var(--muted);padding:18px;text-align:center}
+small.help{display:block;color:var(--muted);font-size:.8rem;margin-top:6px}
+@media(max-width:760px){main{grid-template-columns:1fr}.summary{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body>
+<header><h1>Student Athlete Planner</h1><p>Organize assignments, practices, workouts, and personal events in one place.</p></header>
+<main>
+<section class="card">
+<h2>Add an assignment or event</h2>
+<form id="eventForm">
+<label for="title">Name</label><input id="title" required maxlength="90" placeholder="e.g., Calculus homework">
+<div class="row">
+<div><label for="type">Category</label><select id="type"><option value="school">School</option><option value="sport">Athletics</option><option value="personal">Personal</option></select></div>
+<div><label for="priority">Priority</label><select id="priority"><option value="high">High</option><option value="medium" selected>Medium</option><option value="low">Low</option></select></div>
+</div>
+<div class="row">
+<div><label for="date">Date</label><input id="date" type="date" required></div>
+<div><label for="start">Start time</label><input id="start" type="time" required></div>
+</div>
+<div class="row">
+<div><label for="end">End time</label><input id="end" type="time" required></div>
+<div><label for="due">Due date (optional)</label><input id="due" type="date"></div>
+</div>
+<label for="notes">Notes (optional)</label><input id="notes" maxlength="140" placeholder="Room, materials, details…">
+<button type="submit">Add to planner</button>
+<small class="help">Choose a time block for each event. Priority suggestions are rule-based in this prototype; review them yourself.</small>
+</form>
+</section>
+<section class="card">
+<h2>Your schedule</h2>
+<div class="summary"><div class="metric"><b id="total">0</b><span>Events</span></div><div class="metric"><b id="schoolCount">0</b><span>School</span></div><div class="metric"><b id="sportCount">0</b><span>Athletics</span></div></div>
+<div id="conflicts" aria-live="polite"></div>
+<div class="actions"><button class="secondary" id="demo">Load sample schedule</button><button class="secondary" id="clear">Clear all</button></div>
+<div id="schedule"></div>
+</section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let events = [];
+const today = new Date(); const localDate = new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);
+$('date').value=localDate; $('due').value='';
+function minutes(t){const [h,m]=t.split(':').map(Number);return h*60+m}
+function prettyTime(t){return new Date('2000-01-01T'+t).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}
+function overlap(a,b){return a.date===b.date && minutes(a.start)<minutes(b.end) && minutes(b.start)<minutes(a.end)}
+function priorityOrder(p){return ({high:0,medium:1,low:2})[p]}
+function render(){
+ events.sort((a,b)=>a.date.localeCompare(b.date)||minutes(a.start)-minutes(b.start));
+ $('total').textContent=events.length; $('schoolCount').textContent=events.filter(e=>e.type==='school').length; $('sportCount').textContent=events.filter(e=>e.type==='sport').length;
+ const pairs=[]; for(let i=0;i<events.length;i++)for(let j=i+1;j<events.length;j++)if(overlap(events[i],events[j]))pairs.push([events[i],events[j]]);
+ $('conflicts').innerHTML=pairs.length?'<div class="notice bad"><b>Scheduling conflicts:</b><ul>'+pairs.map(([a,b])=>`<li>${esc(a.title)} overlaps with ${esc(b.title)} on ${a.date}.</li>`).join('')+'</ul>Review or change the time blocks.</div>':'<div class="notice good">No time conflicts detected in your current schedule.</div>';
+ $('schedule').innerHTML=events.length?events.map(e=>`<article class="event ${e.type}"><div><h3>${esc(e.title)}</h3><p>${e.date} · ${prettyTime(e.start)}–${prettyTime(e.end)}</p><p><span class="tag ${e.priority}">${e.priority.toUpperCase()} priority</span><span class="tag">${({school:'School',sport:'Athletics',personal:'Personal'})[e.type]}</span>${e.due?'<span class="tag">Due '+e.due+'</span>':''}</p>${e.notes?'<p>'+esc(e.notes)+'</p>':''}</div><button class="danger" aria-label="Remove '+esc(e.title)+'" onclick="removeEvent('+e.id+')">Remove</button></article>`).join(''):'<div class="empty">No events yet. Add one above or load sample data to try the planner.</div>';
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function removeEvent(id){events=events.filter(e=>e.id!==id);render()}
+$('eventForm').addEventListener('submit',e=>{
+ e.preventDefault();const start=$('start').value,end=$('end').value;
+ if(minutes(end)<=minutes(start)){alert('End time must be after start time.');return}
+ events.push({id:Date.now()+Math.random(),title:$('title').value.trim(),type:$('type').value,priority:$('priority').value,date:$('date').value,start,end,due:$('due').value,notes:$('notes').value.trim()});
+ e.target.reset();$('date').value=localDate;render();
+});
+$('demo').addEventListener('click',()=>{events=[
+{id:1,title:'Calculus assignment',type:'school',priority:'high',date:localDate,start:'16:00',end:'17:00',due:localDate,notes:'Submit on WebAssign'},
+{id:2,title:'Basketball practice',type:'sport',priority:'high',date:localDate,start:'17:00',end:'19:00',due:'',notes:'Team practice'},
+{id:3,title:'Study for English',type:'school',priority:'medium',date:localDate,start:'19:00',end:'19:45',due:'',notes:''},
+{id:4,title:'Strength workout',type:'sport',priority:'medium',date:localDate,start:'18:00',end:'19:00',due:'',notes:'Sample conflict with practice'}];render()});
+$('clear').addEventListener('click',()=>{if(confirm('Clear every event?')){events=[];render()}});
+render();
+</script>
+</body>
+</html>
